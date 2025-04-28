@@ -1,0 +1,409 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <ctype.h>
+#include <string.h>
+
+#define STACKSIZE 100
+
+typedef struct Nodo{
+    char data;
+    struct Nodo *der; 
+    struct Nodo *izq;
+} Nodo;
+typedef struct Nodo *pnode; 
+
+typedef struct{
+    Nodo *elementos[STACKSIZE];
+    int top;
+} Pila;
+
+typedef struct {
+    char elementos[STACKSIZE];
+    int top;
+} PilaChar;
+
+//funciones para Pila (Node*)
+void inicializar(Pila *p);
+bool empty(Pila *p);
+void push(Pila *p, pnode valor);
+pnode pop(Pila *p);
+
+//funciones para PilaChar 
+void inicializarChar(PilaChar *p);
+bool emptyChar(PilaChar *p);
+void pushChar(PilaChar *p, char valor);
+char popChar(PilaChar *p);
+
+pnode crearNodo(char data);
+void freeTree(pnode root);
+
+//funciones implication free 
+pnode postfixToTree(char infix[]);
+void removeImplication(pnode root);
+void TreeToInfix(pnode root, char *infix, int *index);
+
+// funciones fbf
+void infix_Postfix(char infix[], char postfix[]);
+bool validarPostfix(char postfix[]);
+bool validarInfixParentesis(char expresion[]);
+bool validarInfix(char infix[]);
+
+int main(){
+    char infix[STACKSIZE];
+    char postfix[STACKSIZE];
+    char infix_implication_free[STACKSIZE];
+
+    printf("expresión lógica: ");
+    fgets(infix, STACKSIZE, stdin);
+
+    // reemplaza \n con \0
+    for (int i = 0; infix[i] != '\0'; i++){
+        if (infix[i] == '\n'){
+            infix[i] = '\0';
+            break;
+        }
+    }
+
+    if (!validarInfixParentesis(infix)){  
+        printf("Parentesis Incorrectos\n");
+        return 1;
+    }
+    if (!validarInfix(infix)){
+        printf("expresión incorrecta\n");
+        return 1;
+    }
+
+    //si solo tine 1 atomo es valida
+    if ( (strlen(infix) == 1) && (isalpha(infix[0])) ){
+        printf("Implication free: %s\n", infix);
+        return 0;
+    }
+
+    infix_Postfix(infix, postfix);// de prefija a postfija
+
+    if (!validarPostfix(postfix)) {
+        printf("expresión inválida (postfija)\n");
+        return 1;
+    }else{
+        printf("expresión válida \n\n");
+    }
+ 
+
+
+    pnode root = postfixToTree(postfix);
+
+    removeImplication(root);
+
+    int index = 0;                                     //contador de posición
+    TreeToInfix(root, infix_implication_free, &index);
+    infix_implication_free[index] = '\0';
+
+    printf("Implication free: %s\n", infix_implication_free);
+
+    freeTree(root);
+    return 0;
+}
+
+//funciones para Pila (Node*)
+void inicializar(Pila *p){
+    p->top = -1;
+}
+
+bool empty(Pila *p){
+    return p->top == -1;
+}
+
+void push(Pila *p, pnode valor){
+    if (p->top == STACKSIZE - 1){
+        printf("error, pila llena\n");
+        exit(1);
+    }
+    p->elementos[++(p->top)] = valor;
+}
+
+pnode pop(Pila *p){
+    if (empty(p)){
+        printf("error, pila vacia\n");
+        exit(1);
+    }
+    return p->elementos[(p->top)--];
+}
+
+//funciones para PilaChar 
+void inicializarChar(PilaChar *p){
+    p->top = -1;
+}
+
+bool emptyChar(PilaChar *p){
+    return p->top == -1;
+}
+
+void pushChar(PilaChar *p, char valor){
+    if (p->top == STACKSIZE - 1){
+        printf("error, pila llena\n");
+        exit(1);
+    }
+    p->elementos[++(p->top)] = valor;
+}
+
+char popChar(PilaChar *p){
+    if (emptyChar(p)){
+        printf("error, pila vacia\n");
+        exit(1);
+    }
+    return p->elementos[(p->top)--];
+}
+
+pnode crearNodo(char data){
+    pnode newNode = (pnode)malloc(sizeof(Nodo));
+    if(newNode == NULL){
+        printf("error, malloc\n");
+        exit(1);
+    }
+    newNode->data = data;
+    newNode->der = newNode->izq = NULL;
+    return newNode;
+}
+
+void freeTree(pnode root){
+    if(root == NULL) return;
+    freeTree(root->der);
+    freeTree(root->izq);
+    free(root);
+}
+
+//funciones para arból y la expresión
+pnode postfixToTree(char postfix[]){
+    Pila atomos;
+    inicializar(&atomos);
+
+    for(int i = 0; postfix[i] != '\0'; i++){
+        char c = postfix[i];
+
+        if(isalpha(c)){
+            push(&atomos, crearNodo(c)); 
+        } 
+        else{
+            pnode op = crearNodo(c); //else crea un nodo conectivo
+            if (c == '~'){
+                op->der = pop(&atomos); // pop un solo nodo de la pila (atomos) y se asigna como el hijo derecho (op->der)
+            } 
+            else{
+                op->der = pop(&atomos);
+                op->izq = pop(&atomos);
+            }
+            push(&atomos, op); //se apila nodo conectivo otra vez hasta q el arbol este completo
+        }
+    }
+    return pop(&atomos); // al final,  la pila  solo tendrá un nodo, que es la raíz del árbol. ese nodo representa toda la expresión
+}
+
+void removeImplication(pnode root){
+    if (root == NULL) return;
+
+    // llama a la función de forma recursiva 
+    removeImplication(root->der);
+    removeImplication(root->izq);
+
+    if (root->data == '-'){
+        pnode nodo_negacion = crearNodo('~');
+        nodo_negacion->der = root->izq; // negación a la der de p
+        root->data = '+';
+
+        pnode temp = root->der; 
+        root->izq = nodo_negacion; // ~p
+        root->der = temp; // "se guarda la q"
+    }
+}
+
+void TreeToInfix(pnode root, char *infix, int *index) {
+    if (root == NULL) return;
+
+    if (root->data == '~'){
+        infix[(*index)++] = '('; // a la izq de la negación
+        infix[(*index)++] = root->data; // agrega negación
+        TreeToInfix(root->der, infix, index); // operador
+        infix[(*index)++] = ')';
+    } 
+    else{
+        if ( (root->izq != NULL) || (root->der != NULL) ){  //si solo hay un atomo
+            infix[(*index)++] = '('; 
+        }
+        TreeToInfix(root->izq, infix, index); // primero el nodo izq, pq esta en postfijo
+        infix[(*index)++] = root->data; // agrega operador
+        TreeToInfix(root->der, infix, index); 
+        if( (root->izq != NULL) || (root->der != NULL) ){ // si el nodo tenía hijos, para completar los paretesis
+            infix[(*index)++] = ')'; 
+        }
+    }
+}
+
+//validar fbf
+
+bool validarPostfix(char postfix[]){
+    PilaChar pila;
+    inicializarChar(&pila);
+
+    for(int i=0; postfix[i] != '\0'; i++){
+        char c = postfix[i];
+
+        if (isalpha(c)){
+            pushChar(&pila, c);
+        } 
+        else{
+            if (c == '~'){
+                if(emptyChar(&pila)){
+                    printf("error, negación incorrecta\n");
+                    return false;
+                }
+                popChar(&pila); // quita atomo
+                pushChar(&pila, 'X');
+            } 
+            else{
+                if (emptyChar(&pila)){
+                    printf("error, conectivo incorrecto\n");
+                    return false;
+                }
+                popChar(&pila); // quita atomo 2
+
+                if (emptyChar(&pila)){
+                    printf("error, conectivo incorrecto\n");
+                    return false;
+                }
+                popChar(&pila); // quita atomo 1
+                pushChar(&pila, 'X');
+            }
+        }
+    }
+    if(pila.top == 0 && (isalpha(pila.elementos[pila.top]) || pila.elementos[pila.top] == 'X')){ // es valido si al final tiene solo una X
+        return true; 
+    } 
+    else{
+        return false;
+    }
+}
+
+bool validarInfix(char infix[]){
+    int len = strlen(infix);
+    if (len == 0) return false;
+
+    while (len > 0 && isspace((unsigned char)infix[len - 1])) {
+        infix[--len] = '\0';
+    }
+    if (len == 0) return false; // si solo había espacios
+
+    char prev = '\0';
+    bool expecting_operand = true; // al inicio esperamos un operando o '(' o '~'
+
+    for (int i = 0; i < len; i++){
+        char c = infix[i];
+        if (c == ' ') continue;
+
+        if (isalpha(c)){ 
+            if (!expecting_operand) return false;
+            expecting_operand = false; 
+        } else if (c == '~'){ 
+            if (!expecting_operand) return false; // no esperaba operando/negación (ej: p~, )~)
+           
+        } 
+        else if (strchr("*+-", c)){ 
+            if (expecting_operand) return false; // esperaba operando pero vino operador (ej: (+p), *p)
+            expecting_operand = true;
+        } 
+        else if (c == '('){
+            if (!expecting_operand) return false; 
+        } 
+        else if (c == ')'){
+            if (expecting_operand) return false; 
+            expecting_operand = false;
+        } 
+        else{
+            return false; 
+        }
+        prev = c; 
+    }
+
+    // al final de la expresión, no deberíamos estar esperando un operando
+    // (a menos que la expresión sea solo un átomo, lo cual está bien)
+    return !expecting_operand;
+}
+
+bool validarInfixParentesis(char expresion[]){
+    PilaChar parentesis;
+    inicializarChar(&parentesis);
+
+    for (int i = 0; expresion[i] != '\0'; i++){
+        char c = expresion[i];
+
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v') continue;
+
+        if (c == '('){
+            pushChar(&parentesis, c);
+        } 
+        else if (c == ')'){
+            if (emptyChar(&parentesis)){
+                return false; // falso si no hay '(' com su pareja
+            }
+            popChar(&parentesis);
+        }
+    }
+    return emptyChar(&parentesis); // valido si la pila esta vacia al final
+}
+
+
+void infix_Postfix(char infix[], char postfix[]){
+    PilaChar pila;
+    inicializarChar(&pila);
+    int j = 0;
+
+    for (int i = 0; infix[i] != '\0'; i++){
+        char c = infix[i];
+
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v') continue;
+
+        if (isalpha(c)){
+            postfix[j++] = c;
+        } 
+        else if (c == '('){
+            pushChar(&pila, c);
+        } 
+        else if (c == ')'){
+            while (!emptyChar(&pila) && pila.elementos[pila.top] != '('){
+                postfix[j++] = popChar(&pila);
+            }
+            if (!emptyChar(&pila) && pila.elementos[pila.top] == '(') {
+                popChar(&pila);
+            } 
+            else{
+                printf("error: paréntesis desbalanceados (detectado en postfix)\n");
+                exit(1);
+            }
+        } 
+        else if (c == '~'){
+            pushChar(&pila, c);
+        } 
+        else if (strchr("*+-", c)){ // <-- incluye '-' aquí
+             while (!emptyChar(&pila) && pila.elementos[pila.top] != '(') {
+                 postfix[j++] = popChar(&pila);
+             }
+
+            pushChar(&pila, c);
+        }
+        else{
+            printf("error, símbolo no reconocido '%c' (detectado en postfix)\n", c);
+            exit(1);
+        }
+    }
+
+    // vaciar la pila al final
+    while (!emptyChar(&pila)) {
+        if (pila.elementos[pila.top] == '(') {
+            printf("error, paréntesis desbalanceados al final (detectado en postfix)\n");
+            exit(1);
+        }
+        postfix[j++] = popChar(&pila);
+    }
+
+    postfix[j] = '\0';
+}
